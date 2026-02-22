@@ -6,17 +6,12 @@ import io
 import sqlite3
 import hashlib
 
-# ==========================================
-# 1. CONFIGURATION
-# ==========================================
-EMAIL_USER = "your_email@gmail.com"
-EMAIL_PASS = "xxxx xxxx xxxx xxxx"  # Your 16-character App Password
+EMAIL_USER = "harleen.johal31@gmail.com"
+EMAIL_PASS = "ndeg qykp nxrw jgtr"  # Your 16-character App Password
 IMAP_URL = 'imap.gmail.com'
-DB_NAME = 'finances.db'
+DB_NAME = 'finances'
 
-# ==========================================
-# 2. DATABASE SETUP
-# ==========================================
+
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -34,9 +29,6 @@ def init_db():
     conn.close()
     print("✅ Database Initialized.")
 
-# ==========================================
-# 3. EXTRACTION & STORAGE LOGIC
-# ==========================================
 def save_to_db(df):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
