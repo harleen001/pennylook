@@ -1,111 +1,91 @@
-import imaplib
-import email
-import pdfplumber
+import imaplib, email, pdfplumber, io, hashlib, sqlite3, pikepdf
+from flask import Flask, render_template, redirect, url_for
 import pandas as pd
-import io
-import sqlite3
-import hashlib
 
+app = Flask(__name__)
+
+# --- CONFIGURATION ---
 EMAIL_USER = "harleen.johal31@gmail.com"
-EMAIL_PASS = "ndeg qykp nxrw jgtr"  # Your 16-character App Password
-IMAP_URL = 'imap.gmail.com'
-DB_NAME = 'finances'
+EMAIL_PASS = "ndeg qykp nxrw jgtr"
+PDF_PASSWORD = "HARL3112" # e.g., "HARL3101" 
 
-
-def init_db():
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT,
-            description TEXT,
-            amount REAL,
-            category TEXT DEFAULT 'Uncategorized',
-            unique_hash TEXT UNIQUE
-        )
-    ''')
-    conn.commit()
-    conn.close()
-    print("✅ Database Initialized.")
-
-def save_to_db(df):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    added_count = 0
-
-    for _, row in df.iterrows():
-        # 1. Clean data: Remove commas from amounts and handle whitespace
-        try:
-            clean_date = str(row.get('Date', '')).strip()
-            # In your screenshot, 'Narration' is the description
-            clean_desc = str(row.get('Narration', row.get('Description', ''))).strip()
-            # Convert amount to float (handles "1,200.00" -> 1200.0)
-            raw_amt = str(row.get('Amount', '0')).replace(',', '')
-            clean_amt = float(raw_amt)
-
-            # 2. Create a Unique Hash (Prevents duplicates)
-            raw_string = f"{clean_date}{clean_desc}{clean_amt}"
-            t_hash = hashlib.md5(raw_string.encode()).hexdigest()
-
-            cursor.execute('''
-                INSERT INTO transactions (date, description, amount, unique_hash)
-                VALUES (?, ?, ?, ?)
-            ''', (clean_date, clean_desc, clean_amt, t_hash))
-            added_count += 1
-        except (sqlite3.IntegrityError, ValueError):
-            # Skips if hash exists (duplicate) or if data is empty/header row
-            continue
-
-    conn.commit()
-    conn.close()
-    print(f"🚀 Success: {added_count} new transactions saved to Ledgr.")
-
-def run_ledgr_bot():
-    print("🔍 Searching for new statements in Gmail...")
+def decrypt_pdf(pdf_bytes):
+    """Unlocks the Axis Bank PDF using pikepdf"""
     try:
-        mail = imaplib.IMAP4_SSL(IMAP_URL)
-        mail.login(EMAIL_USER, EMAIL_PASS)
-        mail.select("inbox")
-
-        # Search for unread emails with "Statement" in subject
-        status, data = mail.search(None, '(UNSEEN SUBJECT "Statement")')
-        mail_ids = data[0].split()
-
-        if not mail_ids:
-            print("📭 No new unread statements found.")
-            return
-
-        for m_id in mail_ids:
-            _, msg_data = mail.fetch(m_id, "(RFC822)")
-            for response_part in msg_data:
-                if isinstance(response_part, tuple):
-                    msg = email.message_from_bytes(response_part[1])
-                    for part in msg.walk():
-                        if part.get_filename() and part.get_filename().lower().endswith('.pdf'):
-                            print(f"📥 Processing attachment: {part.get_filename()}")
-                            pdf_bytes = part.get_payload(decode=True)
-                            
-                            with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-                                # Extract all pages
-                                all_data = []
-                                for page in pdf.pages:
-                                    table = page.extract_table()
-                                    if table:
-                                        all_data.extend(table)
-                                
-                                if all_data:
-                                    # Create DataFrame using first row as headers
-                                    df = pd.DataFrame(all_data[1:], columns=all_data[0])
-                                    save_to_db(df)
-
-        mail.logout()
+        with pikepdf.open(io.BytesIO(pdf_bytes), password=PDF_PASSWORD) as pdf:
+            out = io.BytesIO()
+            pdf.save(out)
+            return out.getvalue()
     except Exception as e:
-        print(f"🚨 Error: {e}")
+        print(f"Decryption failed: {e}")
+        return None
 
-# ==========================================
-# 4. RUN THE PROGRAM
-# ==========================================
-if __name__ == "__main__":
-    init_db()        # Step 1: Create DB
-    run_ledgr_bot()  # Step 2: Extract & Save
+def fetch_axis_emails():
+    mail = imaplib.IMAP4_SSL('imap.gmail.com')
+    mail.login(EMAIL_USER, EMAIL_PASS)
+    mail.select("inbox")
+
+    # Specifically search for Axis Bank statements
+    status, data = mail.search(None, '(FROM "statements@axis.bank.in")')
+    
+    new_data = []
+    for m_id in data[0].split():
+        _, msg_data = mail.fetch(m_id, "(RFC822)")
+        msg = email.message_from_bytes(msg_data[0][1])
+        
+        for part in msg.walk():
+            if part.get_filename() and part.get_filename().endswith('.pdf'):
+                raw_pdf = part.get_payload(decode=True)
+                # UNLOCK THE PDF
+                unlocked_pdf = decrypt_pdf(raw_pdf)
+                
+                if unlocked_pdf:
+                    with pdfplumber.open(io.BytesIO(unlocked_pdf)) as pdf:
+                        # Your screenshot shows headers: Txn Date, Transaction, Withdrawals, Deposits
+                        table = pdf.pages[0].extract_table()
+                        df = pd.DataFrame(table[1:], columns=table[0])
+                        process_and_save(df)
+    mail.logout()
+
+def process_and_save(df):
+    conn = sqlite3.connect('finances.db')
+    cursor = conn.cursor()
+    
+    for _, row in df.iterrows():
+        # Map Axis columns to our Database
+        date = row.get('Txn Date')
+        desc = row.get('Transaction')
+        
+        # Determine amount and type
+        withdrawal = str(row.get('Withdrawals', '0')).replace(',', '').strip()
+        deposit = str(row.get('Deposits', '0')).replace(',', '').strip()
+        
+        amt = float(withdrawal) if withdrawal and withdrawal != '' else float(deposit) if deposit else 0
+        t_type = "Debit" if withdrawal else "Credit"
+
+        if not date or not desc: continue
+
+        t_hash = hashlib.md5(f"{date}{desc}{amt}".encode()).hexdigest()
+        
+        try:
+            cursor.execute('INSERT INTO transactions (date, description, amount, type, unique_hash) VALUES (?,?,?,?,?)', 
+                           (date, desc, amt, t_type, t_hash))
+        except: continue
+            
+    conn.commit()
+    conn.close()
+
+@app.route('/')
+def index():
+    conn = sqlite3.connect('finances.db')
+    df = pd.read_sql_query("SELECT * FROM transactions ORDER BY id DESC", conn)
+    conn.close()
+    return render_template('index.html', transactions=df.to_dict(orient='records'))
+
+@app.route('/sync')
+def sync():
+    fetch_axis_emails()
+    return redirect(url_for('index'))
+
+if __name__ == '__main__':
+    app.run(debug=True)
