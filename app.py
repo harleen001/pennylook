@@ -9,6 +9,24 @@ EMAIL_USER = "harleen.johal31@gmail.com"
 EMAIL_PASS = "ndeg qykp nxrw jgtr"
 PDF_PASSWORD = "HARL3112" # e.g., "HARL3101" 
 
+def init_db():
+    """Checks for the DB and creates the table if it's not there"""
+    conn = sqlite3.connect('finances.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT,
+            description TEXT,
+            amount REAL,
+            type TEXT,
+            unique_hash TEXT UNIQUE
+        )
+    ''')
+    conn.commit()
+    conn.close()
+    print("✅ Database check complete. Table is ready.")
+
 def decrypt_pdf(pdf_bytes):
     """Unlocks the Axis Bank PDF using pikepdf"""
     try:
@@ -88,4 +106,5 @@ def sync():
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
+    init_db()
     app.run(debug=True)
