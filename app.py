@@ -59,38 +59,49 @@ def save_to_db(df):
 
 @app.route('/sync')
 def sync():
-    print("🔍 Starting Deep Sync for 2025-2026...")
+    print("🔍 FORCING Deep Sync for all history (Multiple Senders)...")
     mail = imaplib.IMAP4_SSL('imap.gmail.com')
     mail.login(EMAIL_USER, EMAIL_PASS)
     mail.select("inbox")
     
-    # Broaden the search: Look for ALL emails from Axis since Jan 1st 2025
-    search_criteria = '(FROM "statements@axis.bank.in" SINCE "01-Jan-2025")'
-    _, data = mail.search(None, search_criteria)
-    mail_ids = data[0].split()
+    # NEW SEARCH: Use OR logic to find both .bank.in AND .com addresses
+    # This ensures we catch Dec 2025, Nov 2025, etc.
+    search_criteria = 'OR (FROM "statements@axis.bank.in") (FROM "statements@axisbank.com")'
+    status, data = mail.search(None, search_criteria)
     
-    print(f"📧 Found {len(mail_ids)} potential statements. Processing...")
+    if status != 'OK':
+        print("❌ Gmail search failed.")
+        return redirect(url_for('index'))
+
+    mail_ids = data[0].split()
+    print(f"📧 Gmail found {len(mail_ids)} total emails across both Axis addresses.")
 
     for m_id in mail_ids:
-        _, msg_data = mail.fetch(m_id, "(RFC822)")
+        status, msg_data = mail.fetch(m_id, "(RFC822)")
+        if status != 'OK': continue
+        
         msg = email.message_from_bytes(msg_data[0][1])
+        print(f"📬 Processing: {msg['Subject']}")
+
         for part in msg.walk():
             if part.get_filename() and part.get_filename().lower().endswith('.pdf'):
-                print(f"📄 Downloading: {part.get_filename()}")
+                filename = part.get_filename()
+                print(f"📎 Found Attachment: {filename}")
+                
                 unlocked = decrypt_pdf(part.get_payload(decode=True))
                 if unlocked:
                     with pdfplumber.open(io.BytesIO(unlocked)) as pdf:
                         for page in pdf.pages:
-                            # Axis 2025 PDFs sometimes use different table structures
-                            # We extract ALL tables found on the page
                             tables = page.extract_tables()
                             for table in tables:
                                 if table and len(table) > 1:
                                     df_temp = pd.DataFrame(table[1:], columns=table[0])
                                     save_to_db(df_temp)
+                else:
+                    print(f"⚠️ Decryption failed for {filename}")
     
     mail.logout()
-    print("✅ Sync Complete. Check the sidebar for new months.")
+    print("✅ Deep Sync Attempt Finished.")
     return redirect(url_for('index'))
 
 
