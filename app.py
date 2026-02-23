@@ -129,12 +129,33 @@ def index():
         'expense': disp_df[disp_df['type'] == 'Debit']['amount'].sum()
     }
 
-    fig = px.line(disp_df, x='date_dt', y='amount', color='type', markers=True,
+ # Update this section inside the index() function
+    fig = px.line(disp_df, 
+                  x='date_dt', 
+                  y='amount', 
+                  color='type', 
+                  markers=True,
                   color_discrete_map={'Debit': '#ef4444', 'Credit': '#10b981'},
-                  custom_data=['description', 'type'])
+                  custom_data=['description', 'type', 'amount']) # Added amount to custom data
 
-    fig.update_traces(hovertemplate="<b>%{x|%d %b %Y}</b><br>₹%{y:,.2f}<br>%{customdata[0]}<extra></extra>")
-    fig.update_layout(hovermode="x unified", template="plotly_white", margin=dict(l=0, r=0, t=40, b=0))
+    # Refined hovertemplate to show Date, Amount (formatted), and the Narration
+    fig.update_traces(
+        hovertemplate="<br>".join([
+            "<b>%{x|%d %b %Y}</b>",
+            "Amount: ₹%{customdata[2]:,.2f}",
+            "Type: %{customdata[1]}",
+            "Details: %{customdata[0]}",
+            "<extra></extra>"
+        ])
+    )
+
+    fig.update_layout(
+        hovermode="closest", # Changed to closest for better individual point inspection
+        template="plotly_white", 
+        margin=dict(l=0, r=0, t=40, b=0),
+        yaxis_title="Transaction Amount (₹)",
+        xaxis_title="Date"
+    )
     
     return render_template('index.html', 
                            transactions=disp_df.sort_values('date_dt', ascending=False).to_dict('records'), 
