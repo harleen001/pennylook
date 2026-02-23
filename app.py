@@ -3,14 +3,18 @@ from flask import Flask, render_template, redirect, url_for, request
 import pandas as pd
 import plotly.express as px
 import plotly.utils
+import os
+from dotenv import load_dotenv
+
 
 app = Flask(__name__)
 
-# --- CONFIG ---
-EMAIL_USER = "harleen.johal31@gmail.com"
-EMAIL_PASS = "ndeg qykp nxrw jgtr"
-PDF_PASSWORD = "HARL3112"
 
+load_dotenv()
+
+EMAIL_USER = os.getenv("EMAIL_USER")
+EMAIL_PASS = os.getenv("EMAIL_PASS")
+PDF_PASSWORD = os.getenv("PDF_PASSWORD")
 def decrypt_pdf(pdf_bytes):
     try:
         with pikepdf.open(io.BytesIO(pdf_bytes), password=PDF_PASSWORD) as pdf:
