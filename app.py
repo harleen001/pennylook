@@ -22,6 +22,19 @@ def decrypt_pdf(pdf_bytes):
             pdf.save(out)
             return out.getvalue()
     except: return None
+def init_db():
+    conn = sqlite3.connect('finances.db')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT,
+            description TEXT,
+            amount REAL,
+            type TEXT,
+            unique_hash TEXT UNIQUE
+        )
+    ''')
+    conn.close()
 
 def save_to_db(df):
     conn = sqlite3.connect('finances.db')
@@ -168,4 +181,5 @@ def index():
                            summary=summary)
 
 if __name__ == '__main__':
+    init_db()
     app.run(debug=True)
