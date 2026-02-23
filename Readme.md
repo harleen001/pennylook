@@ -30,7 +30,9 @@ Below is the visual representation of the data pipeline:
 
 This video demonstrates the synchronization process and the interactive dashboard:
 
-![Project Demo Video](video.mp4)
+<video src="video.mp4" width="100%" controls>
+  Your browser does not support the video tag.
+</video>
 
 ---
 
